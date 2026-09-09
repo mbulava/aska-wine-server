@@ -22,6 +22,7 @@ RUN dpkg --add-architecture i386 \
       gosu \
       steamcmd \
       tini \
+      unzip \
       wine \
       winetricks \
       xvfb \

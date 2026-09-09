@@ -28,8 +28,9 @@ docker run --rm -it \
 
 The entrypoint runs executable `*.sh` scripts in this order:
 
-1. `/docker-entrypoint-initwine.d` (after `wineboot`, before Steam update)
-2. `/docker-entrypoint-initbepinex.d` (after Steam update, before server launch)
+1. Steam update/install step (unless `ASKA_SKIP_STEAM_UPDATE=1`)
+2. `/docker-entrypoint-initwine.d` (after `wineboot`)
+3. `/docker-entrypoint-initbepinex.d` (before server launch)
 
 Both hook stages run in the container with `WINEPREFIX`, `ASKA_SERVER_DIR`, and ASKA env vars available, so custom setup (for example `winetricks` or BepInEx installer actions) can be performed safely before launch.
 
@@ -37,3 +38,23 @@ You can override hook locations with:
 
 - `WINE_HOOK_DIR` (default: `/docker-entrypoint-initwine.d`)
 - `BEPINEX_HOOK_DIR` (default: `/docker-entrypoint-initbepinex.d`)
+
+## Example BepInEx Hook
+
+An example installer script is included at:
+
+- `/home/runner/work/aska-wine-server/aska-wine-server/examples/hooks/bepinex/10-install-bepinex.sh`
+
+To use it, copy it to your mounted BepInEx hooks directory and make it executable:
+
+```bash
+cp /home/runner/work/aska-wine-server/aska-wine-server/examples/hooks/bepinex/10-install-bepinex.sh ./hooks/bepinex/
+chmod +x ./hooks/bepinex/10-install-bepinex.sh
+```
+
+Then set:
+
+- `BEPINEX_ENABLED=1`
+- `BEPINEX_URL=<direct-download-url-to-a-bepinex-zip>`
+- Optional: `BEPINEX_SHA256=<sha256>`
+- Optional: `BEPINEX_POST_INSTALL_CMD=<custom command>` for extra install actions required by your setup
