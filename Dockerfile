@@ -30,8 +30,9 @@ RUN dpkg --add-architecture i386 \
       xauth \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -s /bin/bash steam \
-    && mkdir -p "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" /docker-entrypoint-initwine.d /docker-entrypoint-initbepinex.d /docker/BepInEx \
-    && chown -R steam:steam "${HOME}" "${ASKA_SAVES_DIR}"
+    && mkdir -p "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" /docker-entrypoint-initwine.d /docker-entrypoint-initbepinex.d /docker/BepInEx "${HOME}/.steam" "${HOME}/Steam" \
+    && chown -R steam:steam "${HOME}" "${ASKA_SAVES_DIR}" \
+    && gosu steam /usr/games/steamcmd +quit || true
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/BepInEx /docker/BepInEx
@@ -40,7 +41,8 @@ COPY scripts/ /docker-entrypoint-initbepinex.d/
 RUN chmod +x /usr/local/bin/entrypoint.sh \
     && chmod +x /docker-entrypoint-initbepinex.d/*.sh
 
-VOLUME ["/home/steam/aska_server", "/aska-saves", "/home/steam/.wine"]
+VOLUME ["/home/steam/aska_server", "/aska-saves", "/home/steam/.wine", "/home/steam/.steam"]
+
 
 EXPOSE 27015/udp 27016/udp
 

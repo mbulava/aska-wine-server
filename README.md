@@ -15,8 +15,10 @@ docker run --rm -it \
   -e ASKA_AUTH_TOKEN="YOUR_TOKEN_HERE" \
   -v ./server:/home/steam/aska_server \
   -v ./saves:/aska-saves \
+  -v ./steam:/home/steam/.steam \
   ghcr.io/mbulava/aska-wine-server:latest
 ```
+
 
 ## Build Locally
 

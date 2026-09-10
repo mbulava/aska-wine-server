@@ -160,8 +160,14 @@ EOF
 }
 
 
-mkdir -p "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix
-chown -R steam:steam "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix
+LOGS_DIR="${ASKA_SERVER_DIR}/logs"
+mkdir -p "${ASKA_SERVER_DIR}" "${LOGS_DIR}" "${LOGS_DIR}/steam" "${LOGS_DIR}/bepinex" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" "${HOME}/.steam" "${HOME}/Steam" /tmp/.X11-unix
+
+# Link Steam logs to ASKA_SERVER_DIR/logs/steam
+ln -sfn "${LOGS_DIR}/steam" "${HOME}/.steam/logs" 2>/dev/null || true
+ln -sfn "${LOGS_DIR}/steam" "${HOME}/Steam/logs" 2>/dev/null || true
+
+chown -R steam:steam "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" "${HOME}/.steam" "${HOME}/Steam" /tmp/.X11-unix
 
 require_env ASKA_DISPLAY_NAME
 require_env ASKA_SERVER_NAME
@@ -170,15 +176,21 @@ require_env ASKA_AUTH_TOKEN
 export WINEDEBUG="${WINEDEBUG:--all}"
 export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"
 export DISPLAY="${DISPLAY:-:99}"
-export SteamAppId="${ASKA_GAME_APP_ID:-1898300}"
+export SteamAppId="${ASKA_APP_ID:-3246670}"
+export SteamGameId="${ASKA_APP_ID:-3246670}"
 
 if [ "${ASKA_SKIP_STEAM_UPDATE}" != "1" ]; then
-  echo "Installing / Updating ASKA server via SteamCMD (App ID: ${ASKA_APP_ID})..."
+  echo "Checking for ASKA server updates via SteamCMD (App ID: ${ASKA_APP_ID})..."
+  VALIDATE_FLAG=""
+  if [ "${ASKA_VALIDATE_STEAM_FILES:-0}" = "1" ] || [ ! -f "${ASKA_SERVER_DIR}/AskaServer.exe" ]; then
+    VALIDATE_FLAG="validate"
+  fi
+
   gosu steam /usr/games/steamcmd \
     +@sSteamCmdForcePlatformType windows \
     +force_install_dir "${ASKA_SERVER_DIR}" \
     +login anonymous \
-    +app_update "${ASKA_APP_ID}" validate \
+    +app_update "${ASKA_APP_ID}" ${VALIDATE_FLAG} \
     +quit
 fi
 
@@ -210,6 +222,9 @@ PROPERTIES_FILE="${ASKA_SERVER_DIR}/server.properties.docker.txt"
 write_server_properties "$PROPERTIES_FILE"
 cp -f "$PROPERTIES_FILE" "${ASKA_SERVER_DIR}/server properties.txt"
 
+# Ensure steam_appid.txt exists in server root for Steamworks initialization
+echo "${ASKA_APP_ID:-3246670}" > "${ASKA_SERVER_DIR}/steam_appid.txt"
+chown steam:steam "${ASKA_SERVER_DIR}/steam_appid.txt"
 
 GAME_EXE="${ASKA_SERVER_DIR}/AskaServer.exe"
 if [ ! -f "$GAME_EXE" ]; then
@@ -223,10 +238,18 @@ if [ ! -f "$GAME_EXE" ]; then
   fi
 fi
 
+# Link Unity Player.log into ASKA_SERVER_DIR/logs if present
+if [ -d "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska" ]; then
+  ln -sfn "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska/Player.log" "${LOGS_DIR}/Player.log" 2>/dev/null || true
+  ln -sfn "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska/Player-prev.log" "${LOGS_DIR}/Player-prev.log" 2>/dev/null || true
+fi
+
 cd "${ASKA_SERVER_DIR}"
 echo "Starting ASKA Server via Wine (${GAME_EXE})..."
-echo "exec gosu steam xvfb-run -a wine \"$GAME_EXE\" -batchmode -nographics -logFile - -propertiesPath \"server properties.txt\" -config \"$PROPERTIES_FILE\""
+echo "Output is streamed to stdout and saved to ${LOGS_DIR}/AskaServer.log"
 
-exec gosu steam xvfb-run -a wine "$GAME_EXE" -batchmode -nographics -logFile - -propertiesPath "server properties.txt" -config "$PROPERTIES_FILE"
+exec gosu steam bash -c "xvfb-run -a wine \"$GAME_EXE\" -batchmode -nographics -logFile - -propertiesPath \"server properties.txt\" 2>&1 | tee -a \"${LOGS_DIR}/AskaServer.log\""
+
+
 
 
