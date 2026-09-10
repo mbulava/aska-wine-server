@@ -2,13 +2,29 @@
 
 Minimal container setup for running the **ASKA dedicated server** under Wine, with hook points to customize Wine and run **BepInEx-specific install actions**.
 
-## Build
+## Quick Start (Pre-built Image)
+
+Pull and run the pre-built image from GitHub Container Registry:
+
+```bash
+docker run --rm -it \
+  -p 27015:27015/udp \
+  -p 27016:27016/udp \
+  -e ASKA_DISPLAY_NAME="My ASKA Server" \
+  -e ASKA_SERVER_NAME="my-server" \
+  -e ASKA_AUTH_TOKEN="YOUR_TOKEN_HERE" \
+  -v ./server:/home/steam/aska_server \
+  -v ./saves:/aska-saves \
+  ghcr.io/mbulava/aska-wine-server:latest
+```
+
+## Build Locally
 
 ```bash
 docker build -t aska-wine-server:local .
 ```
 
-## Run
+To run your local build:
 
 ```bash
 docker run --rm -it \
@@ -23,6 +39,7 @@ docker run --rm -it \
   -v ./hooks/bepinex:/docker-entrypoint-initbepinex.d:ro \
   aska-wine-server:local
 ```
+
 
 ## Customization Hooks
 
@@ -39,22 +56,31 @@ You can override hook locations with:
 - `WINE_HOOK_DIR` (default: `/docker-entrypoint-initwine.d`)
 - `BEPINEX_HOOK_DIR` (default: `/docker-entrypoint-initbepinex.d`)
 
-## Example BepInEx Hook
+## BepInEx Support
 
-An example installer script is included at:
-
-- `/home/runner/work/aska-wine-server/aska-wine-server/examples/hooks/bepinex/10-install-bepinex.sh`
-
-To use it, copy it to your mounted BepInEx hooks directory and make it executable:
+The container includes built-in support for BepInEx. To enable it, pass `BEPINEX_ENABLED=1`:
 
 ```bash
-cp /home/runner/work/aska-wine-server/aska-wine-server/examples/hooks/bepinex/10-install-bepinex.sh ./hooks/bepinex/
-chmod +x ./hooks/bepinex/10-install-bepinex.sh
+docker run --rm -it \
+  -p 27015:27015/udp \
+  -p 27016:27016/udp \
+  -e ASKA_DISPLAY_NAME="My ASKA Server" \
+  -e ASKA_SERVER_NAME="my-server" \
+  -e ASKA_AUTH_TOKEN="YOUR_TOKEN_HERE" \
+  -e BEPINEX_ENABLED=1 \
+  -v ./server:/home/steam/aska_server \
+  -v ./saves:/aska-saves \
+  aska-wine-server:local
 ```
 
-Then set:
+When `BEPINEX_ENABLED=1`:
+1. The Wine DLL override for `winhttp` (`native,builtin`) is configured automatically:
+   ```bash
+   wine reg add "HKCU\Software\Wine\DllOverrides" /v winhttp /d native,builtin /f
+   ```
+2. The packaged BepInEx Windows archive (`/docker/BepInEx/ASKA BEPINEX - WINDOWS VERSION-66-V2-0-0-1773857940.zip`) is extracted directly into `ASKA_SERVER_DIR` (only overwriting target files if newer).
+3. The installation script is located at `scripts/10-install-bepinex.sh` and executed automatically before server launch.
 
-- `BEPINEX_ENABLED=1`
-- `BEPINEX_URL=<direct-download-url-to-a-bepinex-zip>`
-- Optional: `BEPINEX_SHA256=<sha256>`
-- Optional: `BEPINEX_POST_INSTALL_CMD=<custom command>` for extra install actions required by your setup
+Optional environment variables:
+- `BEPINEX_ZIP=<custom-path-to-bepinex-zip>` (overrides default package location)
+- `BEPINEX_POST_INSTALL_CMD=<custom command>` (extra install actions required by your setup)

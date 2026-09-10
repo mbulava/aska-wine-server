@@ -9,7 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ASKA_APP_ID=1898300 \
     ASKA_STEAM_GAME_PORT=27015 \
     ASKA_STEAM_QUERY_PORT=27016 \
-    ASKA_SKIP_STEAM_UPDATE=0
+    ASKA_SKIP_STEAM_UPDATE=0 \
+    BEPINEX_ENABLED=0
 
 RUN dpkg --add-architecture i386 \
     && sed -i 's/^Components: main$/Components: main universe multiverse/' /etc/apt/sources.list.d/ubuntu.sources \
@@ -29,12 +30,15 @@ RUN dpkg --add-architecture i386 \
       xauth \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -s /bin/bash steam \
-    && mkdir -p "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" \
+    && mkdir -p "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" /docker-entrypoint-initwine.d /docker-entrypoint-initbepinex.d /docker/BepInEx \
     && chown -R steam:steam "${HOME}" "${ASKA_SAVES_DIR}"
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/BepInEx /docker/BepInEx
+COPY scripts/ /docker-entrypoint-initbepinex.d/
 
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+    && chmod +x /docker-entrypoint-initbepinex.d/*.sh
 
 VOLUME ["/home/steam/aska_server", "/aska-saves", "/home/steam/.wine"]
 
