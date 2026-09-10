@@ -123,10 +123,12 @@ EOF
   fi
 
   # Fill in required and configured properties
+  local clean_token
+  clean_token="$(echo "${ASKA_AUTH_TOKEN}" | tr -d '\r\n"' | xargs)"
+
   set_property "$target_file" "display name" "${ASKA_DISPLAY_NAME}"
   set_property "$target_file" "server name" "${ASKA_SERVER_NAME}"
-  set_property "$target_file" "authentication token" "${ASKA_AUTH_TOKEN}"
-  set_property "$target_file" "auth token" "${ASKA_AUTH_TOKEN}"
+  set_property "$target_file" "authentication token" "${clean_token}"
   set_property "$target_file" "steam game port" "${ASKA_STEAM_GAME_PORT:-27015}"
   set_property "$target_file" "steam query port" "${ASKA_STEAM_QUERY_PORT:-27016}"
 
@@ -176,8 +178,11 @@ require_env ASKA_AUTH_TOKEN
 export WINEDEBUG="${WINEDEBUG:--all}"
 export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"
 export DISPLAY="${DISPLAY:-:99}"
-export SteamAppId="${ASKA_APP_ID:-3246670}"
-export SteamGameId="${ASKA_APP_ID:-3246670}"
+
+# Runtime game App ID for Steamworks GSLT validation (Client App ID is 1898300)
+ASKA_GAME_APP_ID="${ASKA_GAME_APP_ID:-1898300}"
+export SteamAppId="${ASKA_GAME_APP_ID}"
+export SteamGameId="${ASKA_GAME_APP_ID}"
 
 if [ "${ASKA_SKIP_STEAM_UPDATE}" != "1" ]; then
   echo "Checking for ASKA server updates via SteamCMD (App ID: ${ASKA_APP_ID})..."
@@ -194,7 +199,8 @@ if [ "${ASKA_SKIP_STEAM_UPDATE}" != "1" ]; then
     +quit
 fi
 
-echo "Setting up wine, this may take a moment..."
+echo "Setting up wine, this will take some time..."
+echo "Container path '/home/steam/.wine' should be persisted to a volume, or you're going to see this a lot..."
 echo ""
 
 gosu steam wineboot -u
@@ -206,6 +212,10 @@ if [ ! -e "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska" ]; then
   ln -sf "${ASKA_SAVES_DIR}" "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska"
 fi
 chown -R steam:steam "${ASKA_SAVES_DIR}" "${WINEPREFIX}"
+
+echo "Storage redirection: '${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska' to '${ASKA_SAVES_DIR}' for local saves."
+echo ""
+
 
 run_hook_dir "${WINE_HOOK_DIR}"
 echo "wine init completed"
@@ -222,9 +232,10 @@ PROPERTIES_FILE="${ASKA_SERVER_DIR}/server.properties.docker.txt"
 write_server_properties "$PROPERTIES_FILE"
 cp -f "$PROPERTIES_FILE" "${ASKA_SERVER_DIR}/server properties.txt"
 
-# Ensure steam_appid.txt exists in server root for Steamworks initialization
-echo "${ASKA_APP_ID:-3246670}" > "${ASKA_SERVER_DIR}/steam_appid.txt"
+# Set steam_appid.txt to base game App ID (1898300) so Steamworks matches the GSLT token
+echo "${ASKA_GAME_APP_ID}" > "${ASKA_SERVER_DIR}/steam_appid.txt"
 chown steam:steam "${ASKA_SERVER_DIR}/steam_appid.txt"
+
 
 GAME_EXE="${ASKA_SERVER_DIR}/AskaServer.exe"
 if [ ! -f "$GAME_EXE" ]; then
