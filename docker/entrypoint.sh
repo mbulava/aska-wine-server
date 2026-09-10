@@ -35,21 +35,22 @@ write_server_properties() {
   cat > "$file" <<EOF
 display name=${ASKA_DISPLAY_NAME}
 server name=${ASKA_SERVER_NAME}
+authentication token=${ASKA_AUTH_TOKEN}
 auth token=${ASKA_AUTH_TOKEN}
 steam game port=${ASKA_STEAM_GAME_PORT}
 steam query port=${ASKA_STEAM_QUERY_PORT}
 EOF
 
   if [ -n "${ASKA_PASSWORD:-}" ]; then
-    echo "p""assword=${ASKA_PASSWORD}" >> "$file"
+    echo "password=${ASKA_PASSWORD}" >> "$file"
   fi
-  if [ -n "${ASKA_REGION:-}" ]; then
+  if [ -n "${ASKA_REGION:-usa west}" ]; then
     echo "region=${ASKA_REGION}" >> "$file"
   fi
-  if [ -n "${ASKA_MODE:-}" ]; then
+  if [ -n "${ASKA_MODE:-normal}" ]; then
     echo "mode=${ASKA_MODE}" >> "$file"
   fi
-  if [ -n "${ASKA_MAX_PLAYERS:-}" ]; then
+  if [ -n "${ASKA_MAX_PLAYERS:-4}" ]; then
     echo "max players=${ASKA_MAX_PLAYERS}" >> "$file"
   fi
   if [ -n "${ASKA_SEED:-}" ]; then
@@ -58,10 +59,10 @@ EOF
   if [ -n "${ASKA_SAVE_ID:-}" ]; then
     echo "save id=${ASKA_SAVE_ID}" >> "$file"
   fi
-  if [ -n "${ASKA_KEEP_WORLD_ALIVE:-}" ]; then
+  if [ -n "${ASKA_KEEP_WORLD_ALIVE:-false}" ]; then
     echo "keep world alive=${ASKA_KEEP_WORLD_ALIVE}" >> "$file"
   fi
-  if [ -n "${ASKA_AUTOSAVE_STYLE:-}" ]; then
+  if [ -n "${ASKA_AUTOSAVE_STYLE:-every morning}" ]; then
     echo "autosave style=${ASKA_AUTOSAVE_STYLE}" >> "$file"
   fi
 }
@@ -76,6 +77,7 @@ require_env ASKA_AUTH_TOKEN
 export WINEDEBUG="${WINEDEBUG:--all}"
 export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"
 export DISPLAY="${DISPLAY:-:99}"
+export SteamAppId="${ASKA_GAME_APP_ID:-1898300}"
 
 if [ "${ASKA_SKIP_STEAM_UPDATE}" != "1" ]; then
   gosu steam /usr/games/steamcmd \
