@@ -32,38 +32,39 @@ BEPINEX_HOOK_DIR="${BEPINEX_HOOK_DIR:-/docker-entrypoint-initbepinex.d}"
 
 write_server_properties() {
   local file="$1"
+  local display_name="${ASKA_DISPLAY_NAME}"
+  local server_name="${ASKA_SERVER_NAME}"
+  local auth_token="${ASKA_AUTH_TOKEN}"
+  local game_port="${ASKA_STEAM_GAME_PORT:-27015}"
+  local query_port="${ASKA_STEAM_QUERY_PORT:-27016}"
+  local region="${ASKA_REGION:-usa west}"
+  local mode="${ASKA_MODE:-normal}"
+  local max_players="${ASKA_MAX_PLAYERS:-4}"
+  local keep_world_alive="${ASKA_KEEP_WORLD_ALIVE:-false}"
+  local autosave_style="${ASKA_AUTOSAVE_STYLE:-every morning}"
+
   cat > "$file" <<EOF
-display name=${ASKA_DISPLAY_NAME}
-server name=${ASKA_SERVER_NAME}
-authentication token=${ASKA_AUTH_TOKEN}
-auth token=${ASKA_AUTH_TOKEN}
-steam game port=${ASKA_STEAM_GAME_PORT}
-steam query port=${ASKA_STEAM_QUERY_PORT}
+display name=${display_name}
+server name=${server_name}
+authentication token=${auth_token}
+auth token=${auth_token}
+steam game port=${game_port}
+steam query port=${query_port}
+region=${region}
+mode=${mode}
+max players=${max_players}
+keep world alive=${keep_world_alive}
+autosave style=${autosave_style}
 EOF
 
   if [ -n "${ASKA_PASSWORD:-}" ]; then
     echo "password=${ASKA_PASSWORD}" >> "$file"
-  fi
-  if [ -n "${ASKA_REGION:-usa west}" ]; then
-    echo "region=${ASKA_REGION}" >> "$file"
-  fi
-  if [ -n "${ASKA_MODE:-normal}" ]; then
-    echo "mode=${ASKA_MODE}" >> "$file"
-  fi
-  if [ -n "${ASKA_MAX_PLAYERS:-4}" ]; then
-    echo "max players=${ASKA_MAX_PLAYERS}" >> "$file"
   fi
   if [ -n "${ASKA_SEED:-}" ]; then
     echo "seed=${ASKA_SEED}" >> "$file"
   fi
   if [ -n "${ASKA_SAVE_ID:-}" ]; then
     echo "save id=${ASKA_SAVE_ID}" >> "$file"
-  fi
-  if [ -n "${ASKA_KEEP_WORLD_ALIVE:-false}" ]; then
-    echo "keep world alive=${ASKA_KEEP_WORLD_ALIVE}" >> "$file"
-  fi
-  if [ -n "${ASKA_AUTOSAVE_STYLE:-every morning}" ]; then
-    echo "autosave style=${ASKA_AUTOSAVE_STYLE}" >> "$file"
   fi
 }
 
@@ -80,6 +81,7 @@ export DISPLAY="${DISPLAY:-:99}"
 export SteamAppId="${ASKA_GAME_APP_ID:-1898300}"
 
 if [ "${ASKA_SKIP_STEAM_UPDATE}" != "1" ]; then
+  echo "Installing / Updating ASKA server via SteamCMD (App ID: ${ASKA_APP_ID})..."
   gosu steam /usr/games/steamcmd \
     +@sSteamCmdForcePlatformType windows \
     +force_install_dir "${ASKA_SERVER_DIR}" \
@@ -94,11 +96,21 @@ run_hook_dir "${BEPINEX_HOOK_DIR}"
 
 PROPERTIES_FILE="${ASKA_SERVER_DIR}/server.properties.docker.txt"
 write_server_properties "$PROPERTIES_FILE"
+write_server_properties "${ASKA_SERVER_DIR}/server properties.txt"
 
 GAME_EXE="${ASKA_SERVER_DIR}/AskaServer.exe"
 if [ ! -f "$GAME_EXE" ]; then
-  echo "Missing server binary: $GAME_EXE" >&2
-  exit 1
+  # Fallback search if binary is located in a subdirectory
+  FOUND_EXE="$(find "${ASKA_SERVER_DIR}" -maxdepth 2 -iname "*Aska*Server*.exe" | head -n 1 || true)"
+  if [ -n "${FOUND_EXE}" ] && [ -f "${FOUND_EXE}" ]; then
+    GAME_EXE="${FOUND_EXE}"
+  else
+    echo "Missing server binary: $GAME_EXE" >&2
+    exit 1
+  fi
 fi
 
-exec gosu steam xvfb-run -a wine "$GAME_EXE" -batchmode -nographics -config "$PROPERTIES_FILE"
+cd "${ASKA_SERVER_DIR}"
+echo "Starting ASKA Server via Wine (${GAME_EXE})..."
+exec gosu steam xvfb-run -a wine "$GAME_EXE" -batchmode -nographics -propertiesPath "server properties.txt" -config "$PROPERTIES_FILE"
+
