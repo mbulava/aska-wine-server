@@ -35,10 +35,16 @@ UnityLogListening = true
 # Default value: false
 Enabled = false
 
-## If true, standard console output will be redirected to the console window.
+## Which standard output to redirect to.
+# Setting type: StandardOutType
+# Default value: StandardOut
+# Acceptable values: Auto, None, ConsoleOut, StandardOut
+StandardOutType = None
+
+## Prevent console from closing when game exits.
 # Setting type: Boolean
 # Default value: false
-StandardOut = false
+PreventClose = false
 
 [Logging.Disk]
 ## Enables writing log messages to LogOutput.log.
@@ -54,13 +60,21 @@ Enabled = true
 EOF
 else
   awk '
-    /^\[Logging\.Console\]/ { in_console=1; print; next }
-    /^\[/ { in_console=0 }
+    /^\[Logging\.Console\]/ { in_console=1; seen_sot=0; print; next }
+    /^\[/ {
+      if (in_console && !seen_sot) { print "StandardOutType = None" }
+      in_console=0
+    }
     in_console && /^#?Enabled\s*=/ { print "Enabled = false"; next }
-    in_console && /^#?StandardOut\s*=/ { print "StandardOut = false"; next }
+    in_console && /^#?StandardOutType\s*=/ { seen_sot=1; print "StandardOutType = None"; next }
+    in_console && /^#?StandardOut\s*=/ { next }
     { print }
+    END {
+      if (in_console && !seen_sot) { print "StandardOutType = None" }
+    }
   ' "${BEPINEX_CFG}" > "${BEPINEX_CFG}.tmp" && mv "${BEPINEX_CFG}.tmp" "${BEPINEX_CFG}"
 fi
+
 
 if [[ -n "${BEPINEX_POST_INSTALL_CMD:-}" ]]; then
   echo "Running BEPINEX_POST_INSTALL_CMD..."
