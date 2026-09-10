@@ -30,6 +30,49 @@ require_env() {
 WINE_HOOK_DIR="${WINE_HOOK_DIR:-/docker-entrypoint-initwine.d}"
 BEPINEX_HOOK_DIR="${BEPINEX_HOOK_DIR:-/docker-entrypoint-initbepinex.d}"
 
+resolve_save_id() {
+  local save_id="${ASKA_SAVE_ID:-}"
+
+  if [ "${ASKA_RESET_WORLD:-0}" = "1" ] || [ "${ASKA_FORCE_NEW_WORLD:-0}" = "1" ]; then
+    >&2 echo "ASKA_RESET_WORLD is set. Starting a fresh world (ignoring existing saves)."
+    echo ""
+    return 0
+  fi
+
+  if [ -n "${save_id}" ]; then
+    echo "${save_id}"
+    return 0
+  fi
+
+  # 1. Check previous properties files in server directory
+  for prop_file in "${ASKA_SERVER_DIR}/server properties.txt" "${ASKA_SERVER_DIR}/server.properties.docker.txt" "${ASKA_SERVER_DIR}/server.properties.txt"; do
+    if [ -f "$prop_file" ]; then
+      local extracted
+      extracted="$(grep -Ei '^\s*save id\s*=' "$prop_file" 2>/dev/null | tail -n 1 | cut -d'=' -f2- | tr -d '\r\n ' || true)"
+      if [ -n "${extracted}" ]; then
+        >&2 echo "Auto-detected existing save id '${extracted}' from ${prop_file}"
+        echo "${extracted}"
+        return 0
+      fi
+    fi
+  done
+
+  # 2. Check for existing save directories in ASKA_SAVES_DIR
+  if [ -d "${ASKA_SAVES_DIR}" ]; then
+    local latest_save
+    latest_save="$(find "${ASKA_SAVES_DIR}" -mindepth 1 -maxdepth 2 -type d ! -path '*/.*' 2>/dev/null | while read -r d; do
+      printf "%s\t%s\n" "$(stat -c %Y "$d" 2>/dev/null || echo 0)" "$(basename "$d")"
+    done | sort -nr | head -n 1 | cut -f2 || true)"
+    if [ -n "${latest_save}" ]; then
+      >&2 echo "Auto-detected latest existing world save '${latest_save}' from ${ASKA_SAVES_DIR}"
+      echo "${latest_save}"
+      return 0
+    fi
+  fi
+
+  echo ""
+}
+
 write_server_properties() {
   local file="$1"
   local display_name="${ASKA_DISPLAY_NAME}"
@@ -42,6 +85,8 @@ write_server_properties() {
   local max_players="${ASKA_MAX_PLAYERS:-4}"
   local keep_world_alive="${ASKA_KEEP_WORLD_ALIVE:-false}"
   local autosave_style="${ASKA_AUTOSAVE_STYLE:-every morning}"
+  local save_id
+  save_id="$(resolve_save_id)"
 
   cat > "$file" <<EOF
 display name=${display_name}
@@ -63,8 +108,8 @@ EOF
   if [ -n "${ASKA_SEED:-}" ]; then
     echo "seed=${ASKA_SEED}" >> "$file"
   fi
-  if [ -n "${ASKA_SAVE_ID:-}" ]; then
-    echo "save id=${ASKA_SAVE_ID}" >> "$file"
+  if [ -n "${save_id}" ]; then
+    echo "save id=${save_id}" >> "$file"
   fi
 }
 
@@ -91,6 +136,15 @@ if [ "${ASKA_SKIP_STEAM_UPDATE}" != "1" ]; then
 fi
 
 gosu steam wineboot -u
+
+# Ensure Wine AppData save path links to the persistent ASKA_SAVES_DIR volume
+APPDATA_LOCALLOW="${WINEPREFIX}/drive_c/users/steam/AppData/LocalLow"
+mkdir -p "${APPDATA_LOCALLOW}/SandSailorStudio" "${ASKA_SAVES_DIR}"
+if [ ! -e "${APPDATA_LOCALLOW}/SandSailorStudio/Aska" ]; then
+  ln -sf "${ASKA_SAVES_DIR}" "${APPDATA_LOCALLOW}/SandSailorStudio/Aska"
+fi
+chown -R steam:steam "${ASKA_SAVES_DIR}" "${WINEPREFIX}"
+
 run_hook_dir "${WINE_HOOK_DIR}"
 run_hook_dir "${BEPINEX_HOOK_DIR}"
 
@@ -112,5 +166,6 @@ fi
 
 cd "${ASKA_SERVER_DIR}"
 echo "Starting ASKA Server via Wine (${GAME_EXE})..."
-exec gosu steam xvfb-run -a wine "$GAME_EXE" -batchmode -nographics -propertiesPath "server properties.txt" -config "$PROPERTIES_FILE"
+exec gosu steam xvfb-run -a wine "$GAME_EXE" -batchmode -nographics -logFile - -propertiesPath "server properties.txt" -config "$PROPERTIES_FILE"
+
 

@@ -83,4 +83,32 @@ When `BEPINEX_ENABLED=1`:
 
 Optional environment variables:
 - `BEPINEX_ZIP=<custom-path-to-bepinex-zip>` (overrides default package location)
-- `BEPINEX_POST_INSTALL_CMD=<custom command>` (extra install actions required by your setup)
+- `BEPINEX_POST_INSTALL_CMD=<custom command>` (extra install actions required by your setup)
+
+## World Saves & Persistence
+
+World save files and player data are stored in `/aska-saves`, which is mapped to Wine's `AppData/LocalLow/SandSailorStudio/Aska` directory.
+
+### Automatic Save Reuse
+On server restart, the container automatically detects and reuses the last saved world (`save id`) from previous runs so your game progress is preserved.
+
+### Creating a New World / Resetting
+To create a fresh world upon restart without using the previous save, you can do either of the following:
+
+1. **Force a New World**:
+   Pass `-e ASKA_RESET_WORLD=1` when starting the container:
+   ```bash
+   docker run --rm -it \
+     -e ASKA_RESET_WORLD=1 \
+     ...
+     ghcr.io/mbulava/aska-wine-server:latest
+   ```
+2. **Explicit Save ID**:
+   Pass a specific new save identifier via `-e ASKA_SAVE_ID="my_new_world"`:
+   ```bash
+   docker run --rm -it \
+     -e ASKA_SAVE_ID="my_new_world" \
+     ...
+     ghcr.io/mbulava/aska-wine-server:latest
+   ```
+
