@@ -73,45 +73,92 @@ resolve_save_id() {
   echo ""
 }
 
-write_server_properties() {
+set_property() {
   local file="$1"
-  local display_name="${ASKA_DISPLAY_NAME}"
-  local server_name="${ASKA_SERVER_NAME}"
-  local auth_token="${ASKA_AUTH_TOKEN}"
-  local game_port="${ASKA_STEAM_GAME_PORT:-27015}"
-  local query_port="${ASKA_STEAM_QUERY_PORT:-27016}"
-  local region="${ASKA_REGION:-usa west}"
-  local mode="${ASKA_MODE:-normal}"
-  local max_players="${ASKA_MAX_PLAYERS:-4}"
-  local keep_world_alive="${ASKA_KEEP_WORLD_ALIVE:-false}"
-  local autosave_style="${ASKA_AUTOSAVE_STYLE:-every morning}"
-  local save_id
-  save_id="$(resolve_save_id)"
+  local key="$2"
+  local val="$3"
 
-  cat > "$file" <<EOF
-display name=${display_name}
-server name=${server_name}
-authentication token=${auth_token}
-auth token=${auth_token}
-steam game port=${game_port}
-steam query port=${query_port}
-region=${region}
-mode=${mode}
-max players=${max_players}
-keep world alive=${keep_world_alive}
-autosave style=${autosave_style}
-EOF
+  export _KEY="$key"
+  export _VAL="$val"
 
-  if [ -n "${ASKA_PASSWORD:-}" ]; then
-    echo "password=${ASKA_PASSWORD}" >> "$file"
-  fi
-  if [ -n "${ASKA_SEED:-}" ]; then
-    echo "seed=${ASKA_SEED}" >> "$file"
-  fi
-  if [ -n "${save_id}" ]; then
-    echo "save id=${save_id}" >> "$file"
+  awk '
+    BEGIN {
+      k = ENVIRON["_KEY"]
+      v = ENVIRON["_VAL"]
+      IGNORECASE = 1
+    }
+    $0 ~ ("^[[:space:]]*" k "[[:space:]]*=") {
+      print k "=" v
+      next
+    }
+    { print }
+  ' "$file" > "${file}.tmp" && mv "${file}.tmp" "$file"
+
+  if ! grep -qiE "^[[:space:]]*${key}[[:space:]]*=" "$file"; then
+    echo "${key}=${val}" >> "$file"
   fi
 }
+
+write_server_properties() {
+  local target_file="$1"
+  local base_file="${ASKA_SERVER_DIR}/server properties.txt"
+
+  # If base server properties.txt exists and target is different, copy it as baseline
+  if [ -f "$base_file" ] && [ "$base_file" != "$target_file" ]; then
+    cp -f "$base_file" "$target_file"
+  elif [ ! -f "$target_file" ]; then
+    cat > "$target_file" <<'EOF'
+# ASKA Dedicated Server Properties
+display name=
+server name=
+authentication token=
+steam game port=27015
+steam query port=27016
+region=usa west
+mode=normal
+max players=4
+keep world alive=false
+autosave style=every morning
+EOF
+  fi
+
+  # Fill in required and configured properties
+  set_property "$target_file" "display name" "${ASKA_DISPLAY_NAME}"
+  set_property "$target_file" "server name" "${ASKA_SERVER_NAME}"
+  set_property "$target_file" "authentication token" "${ASKA_AUTH_TOKEN}"
+  set_property "$target_file" "auth token" "${ASKA_AUTH_TOKEN}"
+  set_property "$target_file" "steam game port" "${ASKA_STEAM_GAME_PORT:-27015}"
+  set_property "$target_file" "steam query port" "${ASKA_STEAM_QUERY_PORT:-27016}"
+
+  if [ -n "${ASKA_REGION:-}" ]; then
+    set_property "$target_file" "region" "${ASKA_REGION}"
+  fi
+  if [ -n "${ASKA_MODE:-}" ]; then
+    set_property "$target_file" "mode" "${ASKA_MODE}"
+  fi
+  if [ -n "${ASKA_MAX_PLAYERS:-}" ]; then
+    set_property "$target_file" "max players" "${ASKA_MAX_PLAYERS}"
+  fi
+  if [ -n "${ASKA_KEEP_WORLD_ALIVE:-}" ]; then
+    set_property "$target_file" "keep world alive" "${ASKA_KEEP_WORLD_ALIVE}"
+  fi
+  if [ -n "${ASKA_AUTOSAVE_STYLE:-}" ]; then
+    set_property "$target_file" "autosave style" "${ASKA_AUTOSAVE_STYLE}"
+  fi
+  if [ -n "${ASKA_PASSWORD:-}" ]; then
+    set_property "$target_file" "password" "${ASKA_PASSWORD}"
+  fi
+  if [ -n "${ASKA_SEED:-}" ]; then
+    set_property "$target_file" "seed" "${ASKA_SEED}"
+  fi
+
+  local save_id
+  save_id="$(resolve_save_id)"
+  if [ -n "${save_id}" ]; then
+    set_property "$target_file" "save id" "${save_id}"
+  fi
+}
+
 
 mkdir -p "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix
 chown -R steam:steam "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix
@@ -135,22 +182,34 @@ if [ "${ASKA_SKIP_STEAM_UPDATE}" != "1" ]; then
     +quit
 fi
 
+echo "Setting up wine, this may take a moment..."
+echo ""
+
 gosu steam wineboot -u
 
 # Ensure Wine AppData save path links to the persistent ASKA_SAVES_DIR volume
 APPDATA_LOCALLOW="${WINEPREFIX}/drive_c/users/steam/AppData/LocalLow"
-mkdir -p "${APPDATA_LOCALLOW}/SandSailorStudio" "${ASKA_SAVES_DIR}"
-if [ ! -e "${APPDATA_LOCALLOW}/SandSailorStudio/Aska" ]; then
-  ln -sf "${ASKA_SAVES_DIR}" "${APPDATA_LOCALLOW}/SandSailorStudio/Aska"
+mkdir -p "${APPDATA_LOCALLOW}/Sand Sailor Studio" "${ASKA_SAVES_DIR}"
+if [ ! -e "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska" ]; then
+  ln -sf "${ASKA_SAVES_DIR}" "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska"
 fi
 chown -R steam:steam "${ASKA_SAVES_DIR}" "${WINEPREFIX}"
 
 run_hook_dir "${WINE_HOOK_DIR}"
+echo "wine init completed"
+echo ""
+
+echo "Running BepInEx and post install hooks"
+
 run_hook_dir "${BEPINEX_HOOK_DIR}"
+
+echo "BepInEx and post install hooks completed"
+
 
 PROPERTIES_FILE="${ASKA_SERVER_DIR}/server.properties.docker.txt"
 write_server_properties "$PROPERTIES_FILE"
-write_server_properties "${ASKA_SERVER_DIR}/server properties.txt"
+cp -f "$PROPERTIES_FILE" "${ASKA_SERVER_DIR}/server properties.txt"
+
 
 GAME_EXE="${ASKA_SERVER_DIR}/AskaServer.exe"
 if [ ! -f "$GAME_EXE" ]; then
@@ -166,6 +225,8 @@ fi
 
 cd "${ASKA_SERVER_DIR}"
 echo "Starting ASKA Server via Wine (${GAME_EXE})..."
+echo "exec gosu steam xvfb-run -a wine \"$GAME_EXE\" -batchmode -nographics -logFile - -propertiesPath \"server properties.txt\" -config \"$PROPERTIES_FILE\""
+
 exec gosu steam xvfb-run -a wine "$GAME_EXE" -batchmode -nographics -logFile - -propertiesPath "server properties.txt" -config "$PROPERTIES_FILE"
 
 
