@@ -177,7 +177,17 @@ require_env ASKA_AUTH_TOKEN
 
 export WINEDEBUG="${WINEDEBUG:--all}"
 export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}"
-export DISPLAY="${DISPLAY:-:99}"
+# Clean up any stale X locks
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 2>/dev/null || true
+
+# Start Xvfb virtual display with 24-bit color depth required by Unity under Wine
+Xvfb :99 -screen 0 1024x768x24 -nolisten tcp &
+XVFB_PID=$!
+
+export DISPLAY=:99
+
+# Ensure Xvfb is terminated when the container stops
+trap "kill -TERM $XVFB_PID 2>/dev/null || true" EXIT
 
 # Runtime game App ID for Steamworks GSLT validation (Client App ID is 1898300)
 ASKA_GAME_APP_ID="${ASKA_GAME_APP_ID:-1898300}"
@@ -259,7 +269,8 @@ cd "${ASKA_SERVER_DIR}"
 echo "Starting ASKA Server via Wine (${GAME_EXE})..."
 echo "Output is streamed to stdout and saved to ${LOGS_DIR}/AskaServer.log"
 
-exec gosu steam bash -c "xvfb-run -a wine \"$GAME_EXE\" -batchmode -nographics -logFile - -propertiesPath \"server properties.txt\" 2>&1 | tee -a \"${LOGS_DIR}/AskaServer.log\""
+exec gosu steam bash -c "export DISPLAY=:99; wine \"$GAME_EXE\" -batchmode -nographics -logFile - -propertiesPath \"server properties.txt\" 2>&1 | tee -a \"${LOGS_DIR}/AskaServer.log\""
+
 
 
 
