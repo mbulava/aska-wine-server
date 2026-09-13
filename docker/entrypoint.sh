@@ -169,7 +169,8 @@ mkdir -p "${ASKA_SERVER_DIR}" "${LOGS_DIR}" "${LOGS_DIR}/steam" "${LOGS_DIR}/bep
 ln -sfn "${LOGS_DIR}/steam" "${HOME}/.steam/logs" 2>/dev/null || true
 ln -sfn "${LOGS_DIR}/steam" "${HOME}/Steam/logs" 2>/dev/null || true
 
-chown -R steam:steam "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" "${HOME}/.steam" "${HOME}/Steam" /tmp/.X11-unix
+chown -R steam:steam "${HOME}" "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix
+chmod -R u+rwX,go+rX "${HOME}" "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix 2>/dev/null || true
 
 require_env ASKA_DISPLAY_NAME
 require_env ASKA_SERVER_NAME
@@ -264,6 +265,10 @@ if [ -d "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska" ]; then
   ln -sfn "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska/Player.log" "${LOGS_DIR}/Player.log" 2>/dev/null || true
   ln -sfn "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska/Player-prev.log" "${LOGS_DIR}/Player-prev.log" 2>/dev/null || true
 fi
+
+# Final permissions and ownership check to ensure steam user can access all files/plugins
+chown -R steam:steam "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" 2>/dev/null || true
+chmod -R u+rwX,go+rX "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" 2>/dev/null || true
 
 cd "${ASKA_SERVER_DIR}"
 echo "Starting ASKA Server via Wine (${GAME_EXE})..."

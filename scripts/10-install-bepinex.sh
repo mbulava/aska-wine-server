@@ -85,6 +85,15 @@ fi
 mkdir -p "${ASKA_SERVER_DIR}/logs/bepinex"
 if [ -d "${ASKA_SERVER_DIR}/BepInEx" ]; then
   ln -sfn "${ASKA_SERVER_DIR}/BepInEx/LogOutput.log" "${ASKA_SERVER_DIR}/logs/bepinex/LogOutput.log" 2>/dev/null || true
+  echo "BepInEx Logs can be found at ${ASKA_SERVER_DIR}/logs/bepinex/LogOutput.log"
+fi
+
+# Ensure BepInEx directory and plugins have read/write/traversal permissions
+if [ -d "${ASKA_SERVER_DIR}/BepInEx" ]; then
+  chmod -R u+rwX,go+rX "${ASKA_SERVER_DIR}/BepInEx" 2>/dev/null || true
+fi
+if [ -d "${ASKA_SERVER_DIR}/dotnet" ]; then
+  chmod -R u+rwX,go+rX "${ASKA_SERVER_DIR}/dotnet" 2>/dev/null || true
 fi
 
 echo "BepInEx installer hook completed successfully."
@@ -97,3 +106,4 @@ echo ""
 wine reg add "HKCU\\Software\\Wine\\DllOverrides" /v winhttp /d native,builtin /f
 
 echo "DLL overrides configured successfully."
+
