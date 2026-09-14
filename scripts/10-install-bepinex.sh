@@ -81,13 +81,6 @@ if [[ -n "${BEPINEX_POST_INSTALL_CMD:-}" ]]; then
   bash -lc "${BEPINEX_POST_INSTALL_CMD}"
 fi
 
-# Ensure BepInEx logs are linked into ASKA_SERVER_DIR/logs/bepinex
-mkdir -p "${ASKA_SERVER_DIR}/logs/bepinex"
-if [ -d "${ASKA_SERVER_DIR}/BepInEx" ]; then
-  ln -sfn "${ASKA_SERVER_DIR}/BepInEx/LogOutput.log" "${ASKA_SERVER_DIR}/logs/bepinex/LogOutput.log" 2>/dev/null || true
-  echo "BepInEx Logs can be found at ${ASKA_SERVER_DIR}/logs/bepinex/LogOutput.log"
-fi
-
 # Ensure BepInEx directory and plugins have read/write/traversal permissions
 if [ -d "${ASKA_SERVER_DIR}/BepInEx" ]; then
   chmod -R u+rwX,go+rX "${ASKA_SERVER_DIR}/BepInEx" 2>/dev/null || true
@@ -97,8 +90,9 @@ if [ -d "${ASKA_SERVER_DIR}/dotnet" ]; then
 fi
 
 echo "BepInEx installer hook completed successfully."
-
-
+echo ""
+echo "Log file: ${ASKA_SERVER_DIR}/BepInEx/LogOutput.log"
+echo "Error log file: ${ASKA_SERVER_DIR}/BepInEx/errorLog.log"
 echo ""
 echo "Configuring Wine DLL overrides for BepInEx (winhttp)..."
 echo ""

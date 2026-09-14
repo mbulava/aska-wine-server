@@ -272,9 +272,9 @@ chmod -R u+rwX,go+rX "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" 2>
 
 cd "${ASKA_SERVER_DIR}"
 echo "Starting ASKA Server via Wine (${GAME_EXE})..."
-echo "Output is streamed to stdout and saved to ${LOGS_DIR}/AskaServer.log"
 
-exec gosu steam bash -c "export DISPLAY=:99; wine \"$GAME_EXE\" -batchmode -nographics -logFile - -propertiesPath \"server properties.txt\" 2>&1 | tee -a \"${LOGS_DIR}/AskaServer.log\""
+
+exec gosu steam bash -c "export DISPLAY=:99; wine \"$GAME_EXE\" -batchmode -nographics -logFile - -propertiesPath \"server properties.txt\" 2>&1 "
 
 
 
