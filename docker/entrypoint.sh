@@ -163,11 +163,22 @@ EOF
 
 
 LOGS_DIR="${ASKA_SERVER_DIR}/logs"
-mkdir -p "${ASKA_SERVER_DIR}" "${LOGS_DIR}" "${LOGS_DIR}/steam" "${LOGS_DIR}/bepinex" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" "${HOME}/.steam" "${HOME}/Steam" /tmp/.X11-unix
+STEAM_LOGS_DIR="${LOGS_DIR}/steam"
+mkdir -p "${ASKA_SERVER_DIR}" "${LOGS_DIR}" "${STEAM_LOGS_DIR}" "${LOGS_DIR}/bepinex" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix
 
-# Link Steam logs to ASKA_SERVER_DIR/logs/steam
-ln -sfn "${LOGS_DIR}/steam" "${HOME}/.steam/logs" 2>/dev/null || true
-ln -sfn "${LOGS_DIR}/steam" "${HOME}/Steam/logs" 2>/dev/null || true
+# Ensure Steam logs are mapped to the bound volume (${STEAM_LOGS_DIR})
+# If concrete directories exist (e.g. from Docker build or prior run), migrate logs and replace with symlinks
+for steam_log_target in "${HOME}/Steam/logs" "${HOME}/.steam/logs"; do
+  parent_dir="$(dirname "${steam_log_target}")"
+  mkdir -p "${parent_dir}"
+  if [ -e "${steam_log_target}" ] && [ ! -L "${steam_log_target}" ]; then
+    cp -rn "${steam_log_target}"/* "${STEAM_LOGS_DIR}/" 2>/dev/null || true
+    rm -rf "${steam_log_target}"
+  fi
+  ln -sfn "${STEAM_LOGS_DIR}" "${steam_log_target}"
+done
+
+echo "Steam logs mapped to: ${STEAM_LOGS_DIR}"
 
 chown -R steam:steam "${HOME}" "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix
 chmod -R u+rwX,go+rX "${HOME}" "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix 2>/dev/null || true
@@ -202,12 +213,56 @@ if [ "${ASKA_SKIP_STEAM_UPDATE}" != "1" ]; then
     VALIDATE_FLAG="validate"
   fi
 
+  MANIFEST_FILE="${ASKA_SERVER_DIR}/steamapps/appmanifest_${ASKA_APP_ID}.acf"
+  if [ -f "${MANIFEST_FILE}" ]; then
+    STATE_FLAGS="$(grep -Ei '^\s*"StateFlags"\s*' "${MANIFEST_FILE}" 2>/dev/null | awk '{print $2}' | tr -d '"\r\n ' || true)"
+    if [ -n "${STATE_FLAGS}" ] && [ "${STATE_FLAGS}" != "4" ]; then
+      echo "Warning: Detected invalid or interrupted Steam app state in manifest (StateFlags=${STATE_FLAGS})."
+      echo "Removing corrupted manifest to recover from state 0x${STATE_FLAGS} and forcing file validation..."
+      rm -f "${MANIFEST_FILE}"
+      VALIDATE_FLAG="validate"
+    fi
+  fi
+
+  set +e
   gosu steam /usr/games/steamcmd \
     +@sSteamCmdForcePlatformType windows \
     +force_install_dir "${ASKA_SERVER_DIR}" \
     +login anonymous \
     +app_update "${ASKA_APP_ID}" ${VALIDATE_FLAG} \
     +quit
+  STEAM_EXIT_CODE=$?
+  set -e
+
+  if [ ${STEAM_EXIT_CODE} -ne 0 ]; then
+    echo "SteamCMD update failed (exit code: ${STEAM_EXIT_CODE}). Attempting recovery..."
+    # Remove potentially corrupted appmanifest and stale download cache
+    rm -f "${ASKA_SERVER_DIR}/steamapps/appmanifest_${ASKA_APP_ID}.acf"
+    rm -rf "${ASKA_SERVER_DIR}/steamapps/downloading/${ASKA_APP_ID}" "${ASKA_SERVER_DIR}/steamapps/temp/${ASKA_APP_ID}"
+
+    echo "Retrying SteamCMD update with file validation..."
+    set +e
+    gosu steam /usr/games/steamcmd \
+      +@sSteamCmdForcePlatformType windows \
+      +force_install_dir "${ASKA_SERVER_DIR}" \
+      +login anonymous \
+      +app_update "${ASKA_APP_ID}" validate \
+      +quit
+    RETRY_EXIT_CODE=$?
+    set -e
+
+    if [ ${RETRY_EXIT_CODE} -ne 0 ]; then
+      echo "SteamCMD update retry failed (exit code: ${RETRY_EXIT_CODE})."
+      if [ -f "${ASKA_SERVER_DIR}/AskaServer.exe" ]; then
+        echo "Found existing server executable at '${ASKA_SERVER_DIR}/AskaServer.exe'. Continuing startup with existing version..."
+      else
+        echo "Error: SteamCMD installation failed and no existing server executable was found." >&2
+        exit 1
+      fi
+    else
+      echo "SteamCMD update retry completed successfully."
+    fi
+  fi
 fi
 
 echo "Setting up wine, this will take some time..."

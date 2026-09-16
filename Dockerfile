@@ -32,13 +32,16 @@ RUN dpkg --add-architecture i386 \
     && useradd -m -s /bin/bash steam \
     && mkdir -p "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" /docker-entrypoint-initwine.d /docker-entrypoint-initbepinex.d /docker/BepInEx "${HOME}/.steam" "${HOME}/Steam" \
     && chown -R steam:steam "${HOME}" "${ASKA_SAVES_DIR}" \
-    && gosu steam /usr/games/steamcmd +quit || true
+    && gosu steam /usr/games/steamcmd +quit || true \
+    && rm -rf "${HOME}/Steam/logs" "${HOME}/.steam/logs"
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/BepInEx /docker/BepInEx
 COPY scripts/ /docker-entrypoint-initbepinex.d/
 
-RUN chmod +x /usr/local/bin/entrypoint.sh \
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh \
+    && sed -i 's/\r$//' /docker-entrypoint-initbepinex.d/*.sh \
     && chmod +x /docker-entrypoint-initbepinex.d/*.sh
 
 VOLUME ["/home/steam/aska_server", "/aska-saves", "/home/steam/.wine", "/home/steam/.steam"]
