@@ -10,6 +10,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ASKA_STEAM_GAME_PORT=27015 \
     ASKA_STEAM_QUERY_PORT=27016 \
     ASKA_SKIP_STEAM_UPDATE=0 \
+    ASKA_FAST_START=1 \
+    ASKA_FORCE_PERM_FIX=0 \
+    ASKA_SKIP_WINEBOOT_ON_WARM=1 \
+    ASKA_RESET_ON_LOAD_FAILURE=0 \
     BEPINEX_ENABLED=0
 
 RUN dpkg --add-architecture i386 \
@@ -48,5 +52,10 @@ VOLUME ["/home/steam/aska_server", "/aska-saves", "/home/steam/.wine", "/home/st
 
 
 EXPOSE 27015/udp 27016/udp
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=5 \
+  CMD test -f /home/steam/aska_server/logs/ready \
+   && test ! -f /home/steam/aska_server/logs/startup-failed \
+   && ps -ef | grep -Eq '[w]ine .*AskaServer\.exe|[w]ineserver' || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]

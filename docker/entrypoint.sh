@@ -29,6 +29,10 @@ require_env() {
 
 WINE_HOOK_DIR="${WINE_HOOK_DIR:-/docker-entrypoint-initwine.d}"
 BEPINEX_HOOK_DIR="${BEPINEX_HOOK_DIR:-/docker-entrypoint-initbepinex.d}"
+ASKA_FAST_START="${ASKA_FAST_START:-1}"
+ASKA_FORCE_PERM_FIX="${ASKA_FORCE_PERM_FIX:-0}"
+ASKA_SKIP_WINEBOOT_ON_WARM="${ASKA_SKIP_WINEBOOT_ON_WARM:-1}"
+ASKA_RESET_ON_LOAD_FAILURE="${ASKA_RESET_ON_LOAD_FAILURE:-0}"
 
 resolve_save_id() {
   local save_id="${ASKA_SAVE_ID:-}"
@@ -165,6 +169,7 @@ EOF
 LOGS_DIR="${ASKA_SERVER_DIR}/logs"
 STEAM_LOGS_DIR="${LOGS_DIR}/steam"
 mkdir -p "${ASKA_SERVER_DIR}" "${LOGS_DIR}" "${STEAM_LOGS_DIR}" "${LOGS_DIR}/bepinex" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix
+BOOTSTRAP_MARKER="${ASKA_SERVER_DIR}/.aska_bootstrap_complete"
 
 # Ensure Steam logs are mapped to the bound volume (${STEAM_LOGS_DIR})
 # If concrete directories exist (e.g. from Docker build or prior run), migrate logs and replace with symlinks
@@ -180,8 +185,20 @@ done
 
 echo "Steam logs mapped to: ${STEAM_LOGS_DIR}"
 
-chown -R steam:steam "${HOME}" "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix
-chmod -R u+rwX,go+rX "${HOME}" "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix 2>/dev/null || true
+RUN_DEEP_PERM_FIX=0
+if [ "${ASKA_FORCE_PERM_FIX}" = "1" ] || [ "${ASKA_FAST_START}" != "1" ] || [ ! -f "${BOOTSTRAP_MARKER}" ]; then
+  RUN_DEEP_PERM_FIX=1
+fi
+
+if [ "${RUN_DEEP_PERM_FIX}" = "1" ]; then
+  echo "Applying deep ownership/permission repair..."
+  chown -R steam:steam "${HOME}" "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix
+  chmod -R u+rwX,go+rX "${HOME}" "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix 2>/dev/null || true
+else
+  echo "Fast-start enabled: skipping deep ownership/permission repair for warm restart."
+  chown steam:steam "${HOME}" "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix 2>/dev/null || true
+  chmod u+rwX,go+rX "${HOME}" "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" /tmp/.X11-unix 2>/dev/null || true
+fi
 
 require_env ASKA_DISPLAY_NAME
 require_env ASKA_SERVER_NAME
@@ -269,7 +286,13 @@ echo "Setting up wine, this will take some time..."
 echo "Container path '/home/steam/.wine' should be persisted to a volume, or you're going to see this a lot..."
 echo ""
 
-gosu steam wineboot -u
+WINE_INIT_MARKER="${WINEPREFIX}/.aska_wine_initialized"
+if [ "${ASKA_SKIP_WINEBOOT_ON_WARM}" = "1" ] && [ -f "${WINE_INIT_MARKER}" ]; then
+  echo "Wine prefix already initialized. Skipping wineboot for warm start."
+else
+  gosu steam wineboot -u
+  gosu steam touch "${WINE_INIT_MARKER}" || true
+fi
 
 # Ensure Wine AppData save path links to the persistent ASKA_SAVES_DIR volume
 APPDATA_LOCALLOW="${WINEPREFIX}/drive_c/users/steam/AppData/LocalLow"
@@ -322,14 +345,89 @@ if [ -d "${APPDATA_LOCALLOW}/Sand Sailor Studio/Aska" ]; then
 fi
 
 # Final permissions and ownership check to ensure steam user can access all files/plugins
-chown -R steam:steam "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" 2>/dev/null || true
-chmod -R u+rwX,go+rX "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" 2>/dev/null || true
+if [ "${RUN_DEEP_PERM_FIX}" = "1" ]; then
+  chown -R steam:steam "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" 2>/dev/null || true
+  chmod -R u+rwX,go+rX "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" 2>/dev/null || true
+else
+  chown steam:steam "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" 2>/dev/null || true
+  chmod u+rwX,go+rX "${ASKA_SERVER_DIR}" "${ASKA_SAVES_DIR}" "${WINEPREFIX}" 2>/dev/null || true
+fi
+
+touch "${BOOTSTRAP_MARKER}"
+chown steam:steam "${BOOTSTRAP_MARKER}" 2>/dev/null || true
 
 cd "${ASKA_SERVER_DIR}"
 echo "Starting ASKA Server via Wine (${GAME_EXE})..."
+if [ "${ASKA_RESET_ON_LOAD_FAILURE}" = "1" ]; then
+  echo "ASKA_RESET_ON_LOAD_FAILURE is set, but automatic save reset is disabled by policy. Preserving saves and stopping on fatal world-load errors."
+else
+  echo "Fatal world-load errors will preserve saves and stop the service."
+fi
+echo "Troubleshooting logs:"
+echo "  - ${ASKA_SERVER_DIR}/BepInEx/LogOutput.log"
+echo "  - ${ASKA_SERVER_DIR}/BepInEx/errorLog.log"
+echo "  - ${LOGS_DIR}/Player.log"
 
+READY_FILE="${LOGS_DIR}/ready"
+FAIL_FILE="${LOGS_DIR}/startup-failed"
+RUNTIME_LOG_FILE="${LOGS_DIR}/server-runtime.log"
+rm -f "${READY_FILE}" "${FAIL_FILE}"
+touch "${RUNTIME_LOG_FILE}"
+chown steam:steam "${RUNTIME_LOG_FILE}" 2>/dev/null || true
 
-exec gosu steam bash -c "export DISPLAY=:99; wine \"$GAME_EXE\" -batchmode -nographics -logFile - -propertiesPath \"server properties.txt\" 2>&1 "
+set +e
+gosu steam bash -c "export DISPLAY=:99; wine \"$GAME_EXE\" -batchmode -nographics -logFile - -propertiesPath \"server properties.txt\" 2>&1" \
+  | tee -a "${RUNTIME_LOG_FILE}" \
+  | awk -v ready_file="${READY_FILE}" -v fail_file="${FAIL_FILE}" '
+      BEGIN {
+        session_open = 0
+        chat_connected = 0
+        world_started = 0
+        ready = 0
+        fatal = 0
+      }
+      {
+        print
+        fflush()
+
+        if ($0 ~ /The session is now open!/) {
+          session_open = 1
+        }
+        if ($0 ~ /Connected to chat!/) {
+          chat_connected = 1
+        }
+        if ($0 ~ /Generating world using / || $0 ~ /World Data Manager batch [0-9]+ loaded/ || $0 ~ /World Data Manager Deserialization ended:/) {
+          world_started = 1
+        }
+        if ($0 ~ /NullReferenceException:/ || $0 ~ /PopulationHandler\.Deserialize/ || $0 ~ /WorldDataManager\.DeserializeAsync/ || $0 ~ /StorageManager\.LoadActiveSession/) {
+          fatal = 1
+          system("rm -f \"" ready_file "\"; touch \"" fail_file "\"")
+          print "[ASKA] Fatal world-load exception detected. Save data preserved; server will stop."
+          fflush()
+        }
+
+        if (ready == 0 && fatal == 0 && session_open == 1 && chat_connected == 1 && world_started == 1) {
+          system("touch \"" ready_file "\"")
+          print "[ASKA] Readiness gate reached: session connected and world load sequence detected."
+          fflush()
+          ready = 1
+        }
+      }
+    '
+SERVER_EXIT_CODE=${PIPESTATUS[0]}
+set -e
+
+if [ -f "${FAIL_FILE}" ]; then
+  echo "Startup failed due to world-load exception. Preserve existing save data and inspect logs before restarting."
+  echo "Inspect these logs for root cause details:"
+  echo "  - ${ASKA_SERVER_DIR}/BepInEx/LogOutput.log"
+  echo "  - ${ASKA_SERVER_DIR}/BepInEx/errorLog.log"
+  echo "  - ${LOGS_DIR}/Player.log"
+  echo "  - ${RUNTIME_LOG_FILE}"
+  exit 42
+fi
+
+exit "${SERVER_EXIT_CODE}"
 
 
 
