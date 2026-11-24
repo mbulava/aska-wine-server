@@ -53,12 +53,12 @@ VOLUME ["/home/steam/aska_server", "/aska-saves", "/home/steam/.wine", "/home/st
 
 EXPOSE 27015/udp 27016/udp
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=600s --retries=10 \
-  CMD echo "Healthcheck started" \
-   && test -f /home/steam/aska_server/logs/ready \
-   && test ! -f /home/steam/aska_server/logs/startup-failed \
-   && ps -ef | grep -Eq '[w]ine .*AskaServer\.exe|[w]ineserver' || exit 1
+#HEALTHCHECK --interval=30s --timeout=5s --start-period=600s --retries=10 \
+  #CMD echo "Healthcheck started" \
+   #&& test -f /home/steam/aska_server/logs/ready \
+   #&& test ! -f /home/steam/aska_server/logs/startup-failed \
+   #&& ps -ef | grep -Eq '[w]ine .*AskaServer\.exe|[w]ineserver' || exit 1
 
-RUN echo "10 minute before Healthcheck starts" \
-    
+
+RUN echo "10 minute before Healthcheck starts" \    
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
