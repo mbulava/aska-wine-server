@@ -32,7 +32,6 @@ BEPINEX_HOOK_DIR="${BEPINEX_HOOK_DIR:-/docker-entrypoint-initbepinex.d}"
 ASKA_FAST_START="${ASKA_FAST_START:-1}"
 ASKA_FORCE_PERM_FIX="${ASKA_FORCE_PERM_FIX:-0}"
 ASKA_SKIP_WINEBOOT_ON_WARM="${ASKA_SKIP_WINEBOOT_ON_WARM:-1}"
-ASKA_RESET_ON_LOAD_FAILURE="${ASKA_RESET_ON_LOAD_FAILURE:-0}"
 
 resolve_save_id() {
   local save_id="${ASKA_SAVE_ID:-}"
@@ -358,33 +357,32 @@ chown steam:steam "${BOOTSTRAP_MARKER}" 2>/dev/null || true
 
 cd "${ASKA_SERVER_DIR}"
 echo "Starting ASKA Server via Wine (${GAME_EXE})..."
-if [ "${ASKA_RESET_ON_LOAD_FAILURE}" = "1" ]; then
-  echo "ASKA_RESET_ON_LOAD_FAILURE is set, but automatic save reset is disabled by policy. Preserving saves and stopping on fatal world-load errors."
-else
-  echo "Fatal world-load errors will preserve saves and stop the service."
-fi
 echo "Troubleshooting logs:"
 echo "  - ${ASKA_SERVER_DIR}/BepInEx/LogOutput.log"
 echo "  - ${ASKA_SERVER_DIR}/BepInEx/errorLog.log"
 echo "  - ${LOGS_DIR}/Player.log"
 
 READY_FILE="${LOGS_DIR}/ready"
-FAIL_FILE="${LOGS_DIR}/startup-failed"
 RUNTIME_LOG_FILE="${LOGS_DIR}/server-runtime.log"
-rm -f "${READY_FILE}" "${FAIL_FILE}"
+rm -f "${READY_FILE}"
 touch "${RUNTIME_LOG_FILE}"
 chown steam:steam "${RUNTIME_LOG_FILE}" 2>/dev/null || true
+
+SHUTDOWN_REQUESTED=0
+handle_shutdown() {
+  SHUTDOWN_REQUESTED=1
+}
+trap handle_shutdown SIGTERM SIGINT
 
 set +e
 gosu steam bash -c "export DISPLAY=:99; wine \"$GAME_EXE\" -batchmode -nographics -logFile - -propertiesPath \"server properties.txt\" 2>&1" \
   | tee -a "${RUNTIME_LOG_FILE}" \
-  | awk -v ready_file="${READY_FILE}" -v fail_file="${FAIL_FILE}" '
+  | awk -v ready_file="${READY_FILE}" '
       BEGIN {
         session_open = 0
         chat_connected = 0
         world_started = 0
         ready = 0
-        fatal = 0
       }
       {
         print
@@ -399,14 +397,8 @@ gosu steam bash -c "export DISPLAY=:99; wine \"$GAME_EXE\" -batchmode -nographic
         if ($0 ~ /Generating world using / || $0 ~ /World Data Manager batch [0-9]+ loaded/ || $0 ~ /World Data Manager Deserialization ended:/) {
           world_started = 1
         }
-        if ($0 ~ /NullReferenceException:/ || $0 ~ /PopulationHandler\.Deserialize/ || $0 ~ /WorldDataManager\.DeserializeAsync/ || $0 ~ /StorageManager\.LoadActiveSession/) {
-          fatal = 1
-          system("rm -f \"" ready_file "\"; touch \"" fail_file "\"")
-          print "[ASKA] Fatal world-load exception detected. Save data preserved; server will stop."
-          fflush()
-        }
 
-        if (ready == 0 && fatal == 0 && session_open == 1 && chat_connected == 1 && world_started == 1) {
+        if (ready == 0 && session_open == 1 && chat_connected == 1 && world_started == 1) {
           system("touch \"" ready_file "\"")
           print "[ASKA] Readiness gate reached: session connected and world load sequence detected."
           fflush()
@@ -417,19 +409,15 @@ gosu steam bash -c "export DISPLAY=:99; wine \"$GAME_EXE\" -batchmode -nographic
 SERVER_EXIT_CODE=${PIPESTATUS[0]}
 set -e
 
-if [ -f "${FAIL_FILE}" ]; then
-  echo "Startup failed due to world-load exception. Preserve existing save data and inspect logs before restarting."
-  echo "Inspect these logs for root cause details:"
-  echo "  - ${ASKA_SERVER_DIR}/BepInEx/LogOutput.log"
-  echo "  - ${ASKA_SERVER_DIR}/BepInEx/errorLog.log"
-  echo "  - ${LOGS_DIR}/Player.log"
-  echo "  - ${RUNTIME_LOG_FILE}"
-  exit 42
+if [ "${SHUTDOWN_REQUESTED}" = "1" ] || [ "${SERVER_EXIT_CODE}" -eq 143 ] || [ "${SERVER_EXIT_CODE}" -eq 130 ]; then
+  echo "Shutdown requested. Exiting cleanly."
+  exit 0
 fi
 
-exit "${SERVER_EXIT_CODE}"
+if [ "${SERVER_EXIT_CODE}" -ne 0 ]; then
+  echo "Server process exited with code ${SERVER_EXIT_CODE}. Exiting with error."
+  exit "${SERVER_EXIT_CODE}"
+fi
 
-
-
-
-
+echo "Server process exited unexpectedly with code 0 (no shutdown requested). Exiting with error."
+exit 1
